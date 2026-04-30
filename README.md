@@ -132,7 +132,7 @@ wiki:wiki, vc:vc, approval:approval, translation:translate, minutes:minutes
 
 ## 自动授权
 
-指定 `--user-id` 参数后，创建文档、文件夹、电子表格时会自动为你授予 `full_access` 权限，无需手动申请。
+指定 `--user-id` 参数后，创建文档、文件夹、电子表格时会自动为你授权 `full_access`（完全访问权限），可直接编辑和删除，且不会触发飞书转移通知。
 
 ---
 

@@ -18,7 +18,7 @@ function parseArgs() {
     }
   }
   if (args.help) {
-    process.stdout.write(`FrameX Feishu MCP v2.0.1
+    process.stdout.write(`FrameX Feishu MCP v2.0.3
 
 Usage:
   framex-feishu [options]         启动 MCP 服务
@@ -93,18 +93,18 @@ async function api(path, opts = {}) {
   return apiFetch(path, { ...opts, headers: { Authorization: `Bearer ${token}`, ...opts.headers } });
 }
 
-async function transferOwner(token, type) {
+async function grantAccess(token, type) {
   if (!FEISHU_USER_ID) return;
   try {
-    const res = await api(`/open-apis/drive/v1/permissions/${token}/members/transfer_owner?type=${type}&need_notification=false`, {
+    const res = await api(`/open-apis/drive/v1/permissions/${token}/members?type=${type}&need_notification=false`, {
       method: 'POST',
-      body: { member_type: 'openid', member_id: FEISHU_USER_ID },
+      body: { member_type: 'openid', member_id: FEISHU_USER_ID, perm: 'full_access' },
     });
-    if (res.code !== 0) {
-      process.stderr.write(`[移交] ${token} 失败 (${res.code}): ${res.msg}\n`);
+    if (res.code !== 0 && DEBUG) {
+      process.stderr.write(`[授权] ${token} 失败 (${res.code}): ${res.msg}\n`);
     }
   } catch (e) {
-    process.stderr.write(`[移交] ${token} 异常: ${e.message}\n`);
+    if (DEBUG) process.stderr.write(`[授权] ${token} 异常: ${e.message}\n`);
   }
 }
 
@@ -294,7 +294,7 @@ const tools = [
     const res = await api('/open-apis/docx/v1/documents', { method: 'POST', body });
     if (res.code !== 0) throw new Error(`创建文档失败 (${res.code}): ${res.msg}`);
     const doc = res.data.document;
-    await transferOwner(doc.document_id, 'docx');
+    await grantAccess(doc.document_id, 'docx');
     return { document_id: doc.document_id, title: doc.title, url: `https://ecnaqezi6ak9.feishu.cn/docx/${doc.document_id}` };
   }),
 
@@ -374,7 +374,7 @@ const tools = [
       body: { name: a.name, folder_token: folderToken },
     });
     if (res.code !== 0) throw new Error(`创建文件夹失败 (${res.code}): ${res.msg}`);
-    await transferOwner(res.data.token, 'folder');
+    await grantAccess(res.data.token, 'folder');
     return res.data;
   }),
 
@@ -646,7 +646,7 @@ const tools = [
     if (a.folderToken) body.folder_token = a.folderToken;
     const res = await api('/open-apis/sheets/v3/spreadsheets', { method: 'POST', body });
     if (res.code !== 0) throw new Error(`创建电子表格失败 (${res.code}): ${res.msg}`);
-    await transferOwner(res.data.spreadsheet.spreadsheet_token, 'sheet');
+    await grantAccess(res.data.spreadsheet.spreadsheet_token, 'sheet');
     return res.data;
   }),
 
@@ -804,7 +804,7 @@ async function handleMessage(msg) {
     sendJson({ jsonrpc: '2.0', id, result: {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'framex-feishu', version: '2.0.1' },
+      serverInfo: { name: 'framex-feishu', version: '2.0.3' },
     }});
     return;
   }
