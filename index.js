@@ -51,8 +51,10 @@ async function api(path, opts = {}) {
 }
 
 let buffer = '';
+let pending = 0;
 function send(id, result) { process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n'); }
 function sendError(id, code, message) { process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }) + '\n'); }
+function decPending() { if (--pending <= 0) process.exit(0); }
 
 async function handleMessage(msg) {
   const { id, method, params } = msg;
@@ -123,60 +125,68 @@ async function handleMessage(msg) {
       return;
     }
     if (method === 'tools/call') {
+      pending++;
       const { name, arguments: a } = params;
-      let result;
-      switch (name) {
-        case 'send_feishu_message': {
-          result = await api('/open-apis/im/v1/messages?' + new URLSearchParams({ receive_id_type: a.receive_id_type || 'open_id' }), {
-            method: 'POST',
-            body: { receive_id: a.receive_id, msg_type: 'text', content: JSON.stringify({ text: a.text }) },
-          });
-          if (result.code !== 0) return sendError(id, result.code, `发送消息失败: ${result.msg}`);
-          send(id, { content: [{ type: 'text', text: JSON.stringify({ message_id: result.data.message_id }, null, 2) }] });
-          return;
+      try {
+        switch (name) {
+          case 'send_feishu_message': {
+            const r1 = await api('/open-apis/im/v1/messages?' + new URLSearchParams({ receive_id_type: a.receive_id_type || 'open_id' }), {
+              method: 'POST',
+              body: { receive_id: a.receive_id, msg_type: 'text', content: JSON.stringify({ text: a.text }) },
+            });
+            if (r1.code !== 0) return sendError(id, r1.code, `发送消息失败: ${r1.msg}`);
+            send(id, { content: [{ type: 'text', text: JSON.stringify({ message_id: r1.data.message_id }, null, 2) }] });
+            return;
+          }
+          case 'create_feishu_document': {
+            const body = { title: a.title };
+            if (a.folderToken) body.folder_token = a.folderToken;
+            const r2 = await api('/open-apis/docx/v1/documents', { method: 'POST', body });
+            if (r2.code !== 0) return sendError(id, r2.code, `创建文档失败: ${r2.msg}`);
+            const doc = r2.data.document;
+            send(id, { content: [{ type: 'text', text: JSON.stringify({
+              document_id: doc.document_id, title: doc.title,
+              url: `https://ecnaqezi6ak9.feishu.cn/docx/${doc.document_id}`,
+            }, null, 2) }] });
+            return;
+          }
+          case 'get_feishu_root_folder': {
+            const r3 = await api('/open-apis/drive/explorer/v2/root_folder/meta');
+            if (r3.code !== 0) return sendError(id, r3.code, `获取根文件夹失败: ${r3.msg}`);
+            send(id, { content: [{ type: 'text', text: JSON.stringify(r3.data, null, 2) }] });
+            return;
+          }
+          case 'list_feishu_folder': {
+            const r4 = await api(`/open-apis/drive/v1/files?folder_token=${a.folderToken}&page_size=50&order_by=EditedTime&direction=DESC`);
+            if (r4.code !== 0) return sendError(id, r4.code, `浏览文件夹失败: ${r4.msg}`);
+            send(id, { content: [{ type: 'text', text: JSON.stringify(r4.data, null, 2) }] });
+            return;
+          }
+          case 'search_feishu_user': {
+            const payload = {};
+            if (a.mobile) payload.mobiles = [a.mobile];
+            if (a.email) payload.emails = [a.email];
+            const r5 = await api('/open-apis/contact/v3/users/batch_get_id', { method: 'POST', body: payload });
+            if (r5.code !== 0) return sendError(id, r5.code, `查找用户失败: ${r5.msg}`);
+            send(id, { content: [{ type: 'text', text: JSON.stringify(r5.data, null, 2) }] });
+            return;
+          }
+          case 'create_feishu_folder': {
+            let folderToken = a.folderToken;
+            if (!folderToken) {
+              const rootRes = await api('/open-apis/drive/explorer/v2/root_folder/meta');
+              if (rootRes.code !== 0) return sendError(id, rootRes.code, `获取根文件夹失败: ${rootRes.msg}`);
+              folderToken = rootRes.data.token;
+            }
+            const r6 = await api('/open-apis/drive/v1/files/create_folder', { method: 'POST', body: { name: a.name, folder_token: folderToken } });
+            if (r6.code !== 0) return sendError(id, r6.code, `创建文件夹失败: ${r6.msg}`);
+            send(id, { content: [{ type: 'text', text: JSON.stringify(r6.data, null, 2) }] });
+            return;
+          }
+          default: return sendError(id, -32601, `未知工具: ${name}`);
         }
-        case 'create_feishu_document': {
-          const body = { title: a.title };
-          if (a.folderToken) body.folder_token = a.folderToken;
-          result = await api('/open-apis/docx/v1/documents', { method: 'POST', body });
-          if (result.code !== 0) return sendError(id, result.code, `创建文档失败: ${result.msg}`);
-          const doc = result.data.document;
-          send(id, { content: [{ type: 'text', text: JSON.stringify({
-            document_id: doc.document_id, title: doc.title,
-            url: `https://ecnaqezi6ak9.feishu.cn/docx/${doc.document_id}`,
-          }, null, 2) }] });
-          return;
-        }
-        case 'get_feishu_root_folder': {
-          result = await api('/open-apis/drive/explorer/v2/root_folder/meta');
-          if (result.code !== 0) return sendError(id, result.code, `获取根文件夹失败: ${result.msg}`);
-          send(id, { content: [{ type: 'text', text: JSON.stringify(result.data, null, 2) }] });
-          return;
-        }
-        case 'list_feishu_folder': {
-          result = await api(`/open-apis/drive/v1/files?folder_token=${a.folderToken}&page_size=50&order_by=EditedTime&direction=DESC`);
-          if (result.code !== 0) return sendError(id, result.code, `浏览文件夹失败: ${result.msg}`);
-          send(id, { content: [{ type: 'text', text: JSON.stringify(result.data, null, 2) }] });
-          return;
-        }
-        case 'search_feishu_user': {
-          const payload = {};
-          if (a.mobile) payload.mobiles = [a.mobile];
-          if (a.email) payload.emails = [a.email];
-          result = await api('/open-apis/contact/v3/users/batch_get_id', { method: 'POST', body: payload });
-          if (result.code !== 0) return sendError(id, result.code, `查找用户失败: ${result.msg}`);
-          send(id, { content: [{ type: 'text', text: JSON.stringify(result.data, null, 2) }] });
-          return;
-        }
-        case 'create_feishu_folder': {
-          const fbody = { name: a.name };
-          if (a.folderToken) fbody.folder_token = a.folderToken;
-          result = await api('/open-apis/drive/v1/files/create_folder', { method: 'POST', body: fbody });
-          if (result.code !== 0) return sendError(id, result.code, `创建文件夹失败: ${result.msg}`);
-          send(id, { content: [{ type: 'text', text: JSON.stringify(result.data, null, 2) }] });
-          return;
-        }
-        default: return sendError(id, -32601, `未知工具: ${name}`);
+      } finally {
+        decPending();
       }
     }
     sendError(id, -32601, `未知方法: ${method}`);
@@ -192,4 +202,4 @@ process.stdin.on('data', chunk => {
     try { handleMessage(JSON.parse(line)).catch(e => {}); } catch (err) { process.stderr.write('Parse error: ' + err.message + '\n'); }
   }
 });
-process.stdin.on('end', () => process.exit(0));
+process.stdin.on('end', () => { if (pending <= 0) process.exit(0); });
