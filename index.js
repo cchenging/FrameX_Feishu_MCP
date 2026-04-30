@@ -8,6 +8,7 @@ const APP_ID = args['app-id'] || process.env.FEISHU_APP_ID;
 const APP_SECRET = args['app-secret'] || process.env.FEISHU_APP_SECRET;
 const FEISHU_URL = process.env.FEISHU_URL || 'https://open.feishu.cn';
 const DOMAIN = FEISHU_URL === 'https://open.larksuite.com' ? 'larksuite' : 'feishu';
+const FEISHU_USER_ID = args['user-id'] || process.env.FEISHU_USER_ID;
 
 if (!APP_ID || !APP_SECRET) {
   process.stderr.write('Missing FEISHU_APP_ID and FEISHU_APP_SECRET\n');
@@ -48,6 +49,14 @@ async function getToken() {
 async function api(path, opts = {}) {
   const token = await getToken();
   return apiFetch(path, { ...opts, headers: { Authorization: `Bearer ${token}`, ...opts.headers } });
+}
+
+async function addPermission(token, type) {
+  if (!FEISHU_USER_ID) return;
+  await api(`/open-apis/drive/v1/permissions/${token}/members?type=${type}&need_notification=false`, {
+    method: 'POST',
+    body: { member_type: 'openid', member_id: FEISHU_USER_ID, perm: 'full_access' },
+  }).catch(() => {});
 }
 
 let buffer = '';
@@ -144,6 +153,7 @@ async function handleMessage(msg) {
             const r2 = await api('/open-apis/docx/v1/documents', { method: 'POST', body });
             if (r2.code !== 0) return sendError(id, r2.code, `创建文档失败: ${r2.msg}`);
             const doc = r2.data.document;
+            await addPermission(doc.document_id, 'docx');
             send(id, { content: [{ type: 'text', text: JSON.stringify({
               document_id: doc.document_id, title: doc.title,
               url: `https://ecnaqezi6ak9.feishu.cn/docx/${doc.document_id}`,
@@ -180,6 +190,7 @@ async function handleMessage(msg) {
             }
             const r6 = await api('/open-apis/drive/v1/files/create_folder', { method: 'POST', body: { name: a.name, folder_token: folderToken } });
             if (r6.code !== 0) return sendError(id, r6.code, `创建文件夹失败: ${r6.msg}`);
+            await addPermission(r6.data.token, 'folder');
             send(id, { content: [{ type: 'text', text: JSON.stringify(r6.data, null, 2) }] });
             return;
           }
