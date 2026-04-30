@@ -18,7 +18,7 @@ function parseArgs() {
     }
   }
   if (args.help) {
-    process.stdout.write(`FrameX Feishu MCP v2.0.0
+    process.stdout.write(`FrameX Feishu MCP v2.0.1
 
 Usage:
   framex-feishu [options]         启动 MCP 服务
@@ -60,7 +60,7 @@ function apiFetch(path, opts = {}) {
       hostname: u.hostname,
       path: u.pathname + u.search,
       method: opts.method || 'GET',
-      headers: { 'Content-Type': 'application/json', ...opts.headers },
+      headers: { 'Content-Type': 'application/json; charset=utf-8', ...opts.headers },
     }, res => {
       let data = '';
       res.on('data', c => data += c);
@@ -69,7 +69,7 @@ function apiFetch(path, opts = {}) {
       });
     });
     req.on('error', reject);
-    if (opts.body) req.write(JSON.stringify(opts.body));
+    if (opts.body) req.write(typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body), 'utf8');
     req.end();
   });
 }
@@ -96,12 +96,15 @@ async function api(path, opts = {}) {
 async function addPermission(token, type) {
   if (!FEISHU_USER_ID) return;
   try {
-    await api(`/open-apis/drive/v1/permissions/${token}/members?type=${type}&need_notification=false`, {
+    const res = await api(`/open-apis/drive/v1/permissions/${token}/members?type=${type}&need_notification=false`, {
       method: 'POST',
       body: { member_type: 'openid', member_id: FEISHU_USER_ID, perm: 'full_access' },
     });
+    if (res.code !== 0 && DEBUG) {
+      process.stderr.write(`[授权] ${token} 失败 (${res.code}): ${res.msg}\n`);
+    }
   } catch (e) {
-    if (DEBUG) process.stderr.write(`[授权] ${token} 失败: ${e.message}\n`);
+    process.stderr.write(`[授权] ${token} 异常: ${e.message}\n`);
   }
 }
 
@@ -784,13 +787,14 @@ const toolMap = Object.fromEntries(tools.map(t => [t.name, t]));
 
 let buffer = '';
 let pending = 0;
+let stdinEnded = false;
 
 function sendJson(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n');
 }
 
 function decPending() {
-  if (--pending <= 0) process.exit(0);
+  if (--pending <= 0 && stdinEnded) process.exit(0);
 }
 
 async function handleMessage(msg) {
@@ -800,7 +804,7 @@ async function handleMessage(msg) {
     sendJson({ jsonrpc: '2.0', id, result: {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'framex-feishu', version: '2.0.0' },
+      serverInfo: { name: 'framex-feishu', version: '2.0.1' },
     }});
     return;
   }
@@ -840,4 +844,7 @@ process.stdin.on('data', chunk => {
   }
 });
 
-process.stdin.on('end', () => { if (pending <= 0) process.exit(0); });
+process.stdin.on('end', () => {
+  stdinEnded = true;
+  if (pending <= 0) process.exit(0);
+});
