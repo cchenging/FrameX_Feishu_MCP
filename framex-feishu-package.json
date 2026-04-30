@@ -1,0 +1,12 @@
+{
+  "name": "framex-feishu",
+  "version": "1.0.0",
+  "description": "FrameX Feishu MCP - 飞书 MCP 服务。发消息、创建文档(支持指定文件夹)、浏览文件夹、查找用户，零依赖",
+  "type": "module",
+  "main": "index.js",
+  "bin": { "framex-feishu": "index.js" },
+  "keywords": ["feishu", "lark", "mcp", "framex", "飞书"],
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "files": ["index.js"]
+}
