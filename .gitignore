@@ -1,3 +1,6 @@
 node_modules
 *.tgz
 .trae
+.npmrc
+.env
+*.log
