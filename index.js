@@ -18,7 +18,7 @@ function parseArgs() {
     }
   }
   if (args.help) {
-    process.stdout.write(`FrameX Feishu MCP v2.0.9
+    process.stdout.write(`FrameX Feishu MCP v2.1.0
 
 Usage:
   framex-feishu [options]         鍚姩 MCP 鏈嶅姟
@@ -124,7 +124,9 @@ function timestamp() {
   const d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
 }
-const BOT_SIGNATURE = '\n\n鈥?鏉ヨ嚜 framex-feishu MCP 鏅鸿兘鍔╂墜 (MCP)锛?;
+const CLIENT = process.env.TERM_PROGRAM || 'unknown';
+const OS_NAME = process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux';
+const BOT_SIGNATURE = `\n\n— 来自 framex-feishu MCP 智能助手\n  客户端：${CLIENT} ｜ 系统：${OS_NAME} ｜`;
 
 const tools = [
   // ==================== 娑堟伅 (IM) ====================
@@ -133,7 +135,7 @@ const tools = [
     text: str('娑堟伅鍐呭'),
     receive_id_type: strEnum('ID绫诲瀷', ['open_id', 'chat_id', 'user_id']),
     '娣诲姞鏃堕棿': str('鏄惁鑷姩娣诲姞鏃堕棿鎴筹紝鍙€?true/false锛岄粯璁alse'),
-    '娣诲姞绛惧悕': str('鏄惁鑷姩娣诲姞鏉ユ簮绛惧悕锛屽彲閫?true/false锛岄粯璁alse'),
+    '娣诲姞绛惧悕': str('鏄惁鑷姩娣诲姞鏉ユ簮绛惧悕锛堝鎴风銆佺郴缁熴佸伐鍏峰悕锛?锛屽彲閫?true/false锛岄粯璁alse'),
   }, ['receive_id', 'text'], async (a) => {
     let text = a.text;
     if (a['娣诲姞鏃堕棿'] === 'true') text = '[' + timestamp() + ']\n' + text;
@@ -839,7 +841,7 @@ async function handleMessage(msg) {
     sendJson({ jsonrpc: '2.0', id, result: {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'framex-feishu', version: '2.0.9' },
+      serverInfo: { name: 'framex-feishu', version: '2.1.0' },
     }});
     return;
   }
