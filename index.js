@@ -18,7 +18,7 @@ function parseArgs() {
     }
   }
   if (args.help) {
-    process.stdout.write(`FrameX Feishu MCP v2.0.4
+    process.stdout.write(`FrameX Feishu MCP v2.0.5
 
 Usage:
   framex-feishu [options]         启动 MCP 服务
@@ -115,6 +115,10 @@ function t(name, description, props, required, handler) {
 
 function str(desc) { return { type: 'string', description: desc }; }
 function strEnum(desc, items) { return { type: 'string', description: desc, enum: items }; }
+function timestamp() {
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
+}
 
 const tools = [
   // ==================== 消息 (IM) ====================
@@ -122,26 +126,36 @@ const tools = [
     receive_id: str('接收者ID，open_id(个人)或chat_id(群聊)'),
     text: str('消息内容'),
     receive_id_type: strEnum('ID类型', ['open_id', 'chat_id', 'user_id']),
+    add_time: str('是否自动添加时间戳，传 true 则自动在消息前加上当前时间（可选，默认false）'),
   }, ['receive_id', 'text'], async (a) => {
+    let text = a.text;
+    if (a.add_time === 'true') text = '[发送于 ' + timestamp() + ']\n' + text;
     const res = await api('/open-apis/im/v1/messages?' + new URLSearchParams({ receive_id_type: a.receive_id_type || 'open_id' }), {
       method: 'POST',
-      body: { receive_id: a.receive_id, msg_type: 'text', content: JSON.stringify({ text: a.text }) },
+      body: { receive_id: a.receive_id, msg_type: 'text', content: JSON.stringify({ text }) },
     });
     if (res.code !== 0) throw new Error(`发送消息失败 (${res.code}): ${res.msg}`);
-    return { message_id: res.data.message_id };
+    return { message_id: res.data.message_id, sent_at: timestamp() };
   }),
 
   t('send_feishu_card_message', '发送卡片消息到飞书', {
     receive_id: str('接收者ID'),
     card: str('卡片内容 JSON 字符串'),
     receive_id_type: strEnum('ID类型', ['open_id', 'chat_id', 'user_id']),
+    add_time: str('是否自动添加时间戳，传 true 则自动在卡片顶部加上当前时间（可选，默认false）'),
   }, ['receive_id', 'card'], async (a) => {
+    let cardContent = typeof a.card === 'string' ? a.card : JSON.stringify(a.card);
+    if (a.add_time === 'true') {
+      const cardObj = typeof a.card === 'string' ? JSON.parse(a.card) : a.card;
+      if (cardObj.header) cardObj.header.title = '[' + timestamp() + '] ' + (cardObj.header.title || '');
+      cardContent = JSON.stringify(cardObj);
+    }
     const res = await api('/open-apis/im/v1/messages?' + new URLSearchParams({ receive_id_type: a.receive_id_type || 'open_id' }), {
       method: 'POST',
-      body: { receive_id: a.receive_id, msg_type: 'interactive', content: typeof a.card === 'string' ? a.card : JSON.stringify(a.card) },
+      body: { receive_id: a.receive_id, msg_type: 'interactive', content: cardContent },
     });
     if (res.code !== 0) throw new Error(`发送卡片消息失败 (${res.code}): ${res.msg}`);
-    return { message_id: res.data.message_id };
+    return { message_id: res.data.message_id, sent_at: timestamp() };
   }),
 
   t('send_feishu_rich_text', '发送富文本(Post)消息到飞书', {
@@ -154,7 +168,7 @@ const tools = [
       body: { receive_id: a.receive_id, msg_type: 'post', content: typeof a.content === 'string' ? a.content : JSON.stringify(a.content) },
     });
     if (res.code !== 0) throw new Error(`发送富文本消息失败 (${res.code}): ${res.msg}`);
-    return { message_id: res.data.message_id };
+    return { message_id: res.data.message_id, sent_at: timestamp() };
   }),
 
   t('get_feishu_message', '获取消息详情', {
@@ -299,6 +313,7 @@ const tools = [
     return {
       document_id: doc.document_id,
       title: doc.title,
+      created_at: timestamp(),
       parent_token: a.folderToken || null,
       parent_url: a.folderToken ? `https://ecnaqezi6ak9.feishu.cn/drive/folder/${a.folderToken}` : null,
       url: `https://ecnaqezi6ak9.feishu.cn/docx/${doc.document_id}`,
@@ -385,6 +400,7 @@ const tools = [
     return {
       token: res.data.token,
       name: a.name,
+      created_at: timestamp(),
       parent_token: folderToken,
       parent_url: `https://ecnaqezi6ak9.feishu.cn/drive/folder/${folderToken}`,
       url: res.data.url,
@@ -817,7 +833,7 @@ async function handleMessage(msg) {
     sendJson({ jsonrpc: '2.0', id, result: {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'framex-feishu', version: '2.0.4' },
+      serverInfo: { name: 'framex-feishu', version: '2.0.5' },
     }});
     return;
   }
