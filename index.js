@@ -18,7 +18,7 @@ function parseArgs() {
     }
   }
   if (args.help) {
-    process.stdout.write(`FrameX Feishu MCP v2.0.5
+    process.stdout.write(`FrameX Feishu MCP v2.0.6
 
 Usage:
   framex-feishu [options]         启动 MCP 服务
@@ -119,6 +119,7 @@ function timestamp() {
   const d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
 }
+const BOT_SIGNATURE = '\n\n— 来自 framex-feishu MCP 智能助手';
 
 const tools = [
   // ==================== 消息 (IM) ====================
@@ -127,9 +128,11 @@ const tools = [
     text: str('消息内容'),
     receive_id_type: strEnum('ID类型', ['open_id', 'chat_id', 'user_id']),
     add_time: str('是否自动添加时间戳，传 true 则自动在消息前加上当前时间（可选，默认false）'),
+    add_signature: str('是否自动添加来源签名，传 true 则自动追加 "— 来自 framex-feishu MCP 智能助手"（可选，默认false）'),
   }, ['receive_id', 'text'], async (a) => {
     let text = a.text;
     if (a.add_time === 'true') text = '[发送于 ' + timestamp() + ']\n' + text;
+    if (a.add_signature === 'true') text = text + BOT_SIGNATURE;
     const res = await api('/open-apis/im/v1/messages?' + new URLSearchParams({ receive_id_type: a.receive_id_type || 'open_id' }), {
       method: 'POST',
       body: { receive_id: a.receive_id, msg_type: 'text', content: JSON.stringify({ text }) },
@@ -143,11 +146,12 @@ const tools = [
     card: str('卡片内容 JSON 字符串'),
     receive_id_type: strEnum('ID类型', ['open_id', 'chat_id', 'user_id']),
     add_time: str('是否自动添加时间戳，传 true 则自动在卡片顶部加上当前时间（可选，默认false）'),
+    add_signature: str('是否自动添加来源签名，传 true 则自动追加来源信息（可选，默认false）'),
   }, ['receive_id', 'card'], async (a) => {
     let cardContent = typeof a.card === 'string' ? a.card : JSON.stringify(a.card);
-    if (a.add_time === 'true') {
+    if (a.add_time === 'true' || a.add_signature === 'true') {
       const cardObj = typeof a.card === 'string' ? JSON.parse(a.card) : a.card;
-      if (cardObj.header) cardObj.header.title = '[' + timestamp() + '] ' + (cardObj.header.title || '');
+      if (a.add_time === 'true' && cardObj.header) cardObj.header.title = '[' + timestamp() + '] ' + (cardObj.header.title || '');
       cardContent = JSON.stringify(cardObj);
     }
     const res = await api('/open-apis/im/v1/messages?' + new URLSearchParams({ receive_id_type: a.receive_id_type || 'open_id' }), {
@@ -833,7 +837,7 @@ async function handleMessage(msg) {
     sendJson({ jsonrpc: '2.0', id, result: {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'framex-feishu', version: '2.0.5' },
+      serverInfo: { name: 'framex-feishu', version: '2.0.6' },
     }});
     return;
   }
