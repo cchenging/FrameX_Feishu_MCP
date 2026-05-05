@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 import https from 'node:https';
 
 function parseArgs() {
@@ -18,7 +18,7 @@ function parseArgs() {
     }
   }
   if (args.help) {
-    process.stdout.write(`FrameX Feishu MCP v2.1.1
+    process.stdout.write(`FrameX Feishu MCP v2.0.6
 
 Usage:
   framex-feishu [options]         启动 MCP 服务
@@ -95,16 +95,11 @@ async function api(path, opts = {}) {
 
 async function grantAccess(token, fileType) {
   if (!FEISHU_USER_ID) return;
-  const validTypes = ['doc', 'sheet', 'file', 'wiki', 'bitable', 'docx', 'mindnote', 'minutes', 'slides'];
-  const type = validTypes.includes(fileType) ? fileType : null;
-  if (!type) {
-    process.stderr.write(`[提示] ${fileType} 不支持权限操作，跳过授权\n`);
-    return;
-  }
   try {
-    const res = await api(`/open-apis/drive/v1/permissions/${token}/members/transfer_owner?type=${type}&need_notification=false`, {
+    const type = fileType === 'folder' ? 'docx' : fileType;
+    const res = await api(`/open-apis/drive/v1/permissions/${token}/members?type=${type}&need_notification=true`, {
       method: 'POST',
-      body: { member_type: 'openid', member_id: FEISHU_USER_ID },
+      body: { member_type: 'openid', member_id: FEISHU_USER_ID, perm: 'full_access' },
     });
     if (res.code !== 0) {
       process.stderr.write(`[授权失败] ${token} (${res.code}): ${res.msg}\n`);
@@ -124,9 +119,7 @@ function timestamp() {
   const d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
 }
-const CLIENT = process.env.TERM_PROGRAM || 'unknown';
-const OS_NAME = process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux';
-const BOT_SIGNATURE = `\n\n— 来自 framex-feishu MCP 智能助手\n  客户端：${CLIENT} ｜ 系统：${OS_NAME} ｜`;
+const BOT_SIGNATURE = '\n\n— 来自 framex-feishu MCP 智能助手';
 
 const tools = [
   // ==================== 消息 (IM) ====================
@@ -134,30 +127,31 @@ const tools = [
     receive_id: str('接收者ID，open_id(个人)或chat_id(群聊)'),
     text: str('消息内容'),
     receive_id_type: strEnum('ID类型', ['open_id', 'chat_id', 'user_id']),
-    '添加时间': str('是否自动添加时间戳，可选 true/false，默认false'),
-    '添加签名': str('是否自动添加来源签名（客户端、系统、工具名），可选 true/false，默认false'),
+    add_time: str('是否自动添加时间戳，传 true 则自动在消息前加上当前时间（可选，默认false）'),
+    add_signature: str('是否自动添加来源签名，传 true 则自动追加 "— 来自 framex-feishu MCP 智能助手"（可选，默认false）'),
   }, ['receive_id', 'text'], async (a) => {
     let text = a.text;
-    if (a['添加时间'] === 'true') text = '[' + timestamp() + ']\n' + text;
-    if (a['添加签名'] === 'true') text = text + BOT_SIGNATURE + timestamp();
+    if (a.add_time === 'true') text = '[发送于 ' + timestamp() + ']\n' + text;
+    if (a.add_signature === 'true') text = text + BOT_SIGNATURE;
     const res = await api('/open-apis/im/v1/messages?' + new URLSearchParams({ receive_id_type: a.receive_id_type || 'open_id' }), {
       method: 'POST',
       body: { receive_id: a.receive_id, msg_type: 'text', content: JSON.stringify({ text }) },
     });
     if (res.code !== 0) throw new Error(`发送消息失败 (${res.code}): ${res.msg}`);
-    return { 消息ID: res.data.message_id, 发送时间: timestamp() };
+    return { message_id: res.data.message_id, sent_at: timestamp() };
   }),
 
   t('send_feishu_card_message', '发送卡片消息到飞书', {
     receive_id: str('接收者ID'),
     card: str('卡片内容 JSON 字符串'),
     receive_id_type: strEnum('ID类型', ['open_id', 'chat_id', 'user_id']),
-    '添加时间': str('是否自动添加时间戳，可选 true/false，默认false'),
+    add_time: str('是否自动添加时间戳，传 true 则自动在卡片顶部加上当前时间（可选，默认false）'),
+    add_signature: str('是否自动添加来源签名，传 true 则自动追加来源信息（可选，默认false）'),
   }, ['receive_id', 'card'], async (a) => {
     let cardContent = typeof a.card === 'string' ? a.card : JSON.stringify(a.card);
-    if (a['添加时间'] === 'true') {
+    if (a.add_time === 'true' || a.add_signature === 'true') {
       const cardObj = typeof a.card === 'string' ? JSON.parse(a.card) : a.card;
-      if (cardObj.header) cardObj.header.title = '[' + timestamp() + '] ' + (cardObj.header.title || '');
+      if (a.add_time === 'true' && cardObj.header) cardObj.header.title = '[' + timestamp() + '] ' + (cardObj.header.title || '');
       cardContent = JSON.stringify(cardObj);
     }
     const res = await api('/open-apis/im/v1/messages?' + new URLSearchParams({ receive_id_type: a.receive_id_type || 'open_id' }), {
@@ -165,7 +159,7 @@ const tools = [
       body: { receive_id: a.receive_id, msg_type: 'interactive', content: cardContent },
     });
     if (res.code !== 0) throw new Error(`发送卡片消息失败 (${res.code}): ${res.msg}`);
-    return { 消息ID: res.data.message_id, 发送时间: timestamp() };
+    return { message_id: res.data.message_id, sent_at: timestamp() };
   }),
 
   t('send_feishu_rich_text', '发送富文本(Post)消息到飞书', {
@@ -178,7 +172,7 @@ const tools = [
       body: { receive_id: a.receive_id, msg_type: 'post', content: typeof a.content === 'string' ? a.content : JSON.stringify(a.content) },
     });
     if (res.code !== 0) throw new Error(`发送富文本消息失败 (${res.code}): ${res.msg}`);
-    return { 消息ID: res.data.message_id, 发送时间: timestamp() };
+    return { message_id: res.data.message_id, sent_at: timestamp() };
   }),
 
   t('get_feishu_message', '获取消息详情', {
@@ -321,11 +315,12 @@ const tools = [
     const doc = res.data.document;
     await grantAccess(doc.document_id, 'docx');
     return {
-      文档ID: doc.document_id,
-      标题: doc.title,
-      创建时间: timestamp(),
-      链接: `https://ecnaqezi6ak9.feishu.cn/docx/${doc.document_id}`,
-      所在文件夹: a.folderToken ? `https://ecnaqezi6ak9.feishu.cn/drive/folder/${a.folderToken}` : '根目录',
+      document_id: doc.document_id,
+      title: doc.title,
+      created_at: timestamp(),
+      parent_token: a.folderToken || null,
+      parent_url: a.folderToken ? `https://ecnaqezi6ak9.feishu.cn/drive/folder/${a.folderToken}` : null,
+      url: `https://ecnaqezi6ak9.feishu.cn/docx/${doc.document_id}`,
     };
   }),
 
@@ -405,12 +400,14 @@ const tools = [
       body: { name: a.name, folder_token: folderToken },
     });
     if (res.code !== 0) throw new Error(`创建文件夹失败 (${res.code}): ${res.msg}`);
+    await grantAccess(res.data.token, 'folder');
     return {
-      文件夹Token: res.data.token,
-      名称: a.name,
-      创建时间: timestamp(),
-      链接: res.data.url,
-      所在位置: folderToken === 'nodcnR7ORVbNUE0cESM0KybzXDL' ? '根目录' : `https://ecnaqezi6ak9.feishu.cn/drive/folder/${folderToken}`,
+      token: res.data.token,
+      name: a.name,
+      created_at: timestamp(),
+      parent_token: folderToken,
+      parent_url: `https://ecnaqezi6ak9.feishu.cn/drive/folder/${folderToken}`,
+      url: res.data.url,
     };
   }),
 
@@ -840,7 +837,7 @@ async function handleMessage(msg) {
     sendJson({ jsonrpc: '2.0', id, result: {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'framex-feishu', version: '2.1.1' },
+      serverInfo: { name: 'framex-feishu', version: '2.0.6' },
     }});
     return;
   }
@@ -884,3 +881,4 @@ process.stdin.on('end', () => {
   stdinEnded = true;
   if (pending <= 0) process.exit(0);
 });
+
