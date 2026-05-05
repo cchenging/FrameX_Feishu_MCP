@@ -18,7 +18,7 @@ function parseArgs() {
     }
   }
   if (args.help) {
-    process.stdout.write(`FrameX Feishu MCP v2.0.3
+    process.stdout.write(`FrameX Feishu MCP v2.0.4
 
 Usage:
   framex-feishu [options]         启动 MCP 服务
@@ -93,18 +93,19 @@ async function api(path, opts = {}) {
   return apiFetch(path, { ...opts, headers: { Authorization: `Bearer ${token}`, ...opts.headers } });
 }
 
-async function grantAccess(token, type) {
+async function grantAccess(token, fileType) {
   if (!FEISHU_USER_ID) return;
   try {
-    const res = await api(`/open-apis/drive/v1/permissions/${token}/members?type=${type}&need_notification=false`, {
+    const type = fileType === 'folder' ? 'docx' : fileType;
+    const res = await api(`/open-apis/drive/v1/permissions/${token}/members?type=${type}&need_notification=true`, {
       method: 'POST',
       body: { member_type: 'openid', member_id: FEISHU_USER_ID, perm: 'full_access' },
     });
-    if (res.code !== 0 && DEBUG) {
-      process.stderr.write(`[授权] ${token} 失败 (${res.code}): ${res.msg}\n`);
+    if (res.code !== 0) {
+      process.stderr.write(`[授权失败] ${token} (${res.code}): ${res.msg}\n`);
     }
   } catch (e) {
-    if (DEBUG) process.stderr.write(`[授权] ${token} 异常: ${e.message}\n`);
+    process.stderr.write(`[授权异常] ${token}: ${e.message}\n`);
   }
 }
 
@@ -295,7 +296,13 @@ const tools = [
     if (res.code !== 0) throw new Error(`创建文档失败 (${res.code}): ${res.msg}`);
     const doc = res.data.document;
     await grantAccess(doc.document_id, 'docx');
-    return { document_id: doc.document_id, title: doc.title, url: `https://ecnaqezi6ak9.feishu.cn/docx/${doc.document_id}` };
+    return {
+      document_id: doc.document_id,
+      title: doc.title,
+      parent_token: a.folderToken || null,
+      parent_url: a.folderToken ? `https://ecnaqezi6ak9.feishu.cn/drive/folder/${a.folderToken}` : null,
+      url: `https://ecnaqezi6ak9.feishu.cn/docx/${doc.document_id}`,
+    };
   }),
 
   t('get_feishu_document', '获取文档信息', {
@@ -375,7 +382,13 @@ const tools = [
     });
     if (res.code !== 0) throw new Error(`创建文件夹失败 (${res.code}): ${res.msg}`);
     await grantAccess(res.data.token, 'folder');
-    return res.data;
+    return {
+      token: res.data.token,
+      name: a.name,
+      parent_token: folderToken,
+      parent_url: `https://ecnaqezi6ak9.feishu.cn/drive/folder/${folderToken}`,
+      url: res.data.url,
+    };
   }),
 
   t('get_feishu_file_metadata', '获取文件/文件夹元信息', {
@@ -804,7 +817,7 @@ async function handleMessage(msg) {
     sendJson({ jsonrpc: '2.0', id, result: {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'framex-feishu', version: '2.0.3' },
+      serverInfo: { name: 'framex-feishu', version: '2.0.4' },
     }});
     return;
   }
