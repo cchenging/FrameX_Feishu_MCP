@@ -18,7 +18,7 @@ function parseArgs() {
     }
   }
   if (args.help) {
-    process.stdout.write(`FrameX Feishu MCP v2.0.7
+    process.stdout.write(`FrameX Feishu MCP v2.0.8
 
 Usage:
   framex-feishu [options]         启动 MCP 服务
@@ -97,12 +97,18 @@ async function grantAccess(token, fileType) {
   if (!FEISHU_USER_ID) return;
   try {
     const type = fileType === 'folder' ? 'docx' : fileType;
-    const res = await api(`/open-apis/drive/v1/permissions/${token}/members?type=${type}&need_notification=true`, {
+    const res = await api(`/open-apis/drive/v1/permissions/${token}/members/transfer_owner?type=${type}&need_notification=false`, {
       method: 'POST',
-      body: { member_type: 'openid', member_id: FEISHU_USER_ID, perm: 'full_access' },
+      body: { member_type: 'openid', member_id: FEISHU_USER_ID },
     });
     if (res.code !== 0) {
-      process.stderr.write(`[授权失败] ${token} (${res.code}): ${res.msg}\n`);
+      try {
+        const res2 = await api(`/open-apis/drive/v1/permissions/${token}/members?type=${type}&need_notification=false`, {
+          method: 'POST',
+          body: { member_type: 'openid', member_id: FEISHU_USER_ID, perm: 'full_access' },
+        });
+        if (res2.code !== 0) process.stderr.write(`[授权失败] ${token} (${res2.code}): ${res2.msg}\n`);
+      } catch (e2) { process.stderr.write(`[授权异常] ${token}: ${e2.message}\n`); }
     }
   } catch (e) {
     process.stderr.write(`[授权异常] ${token}: ${e.message}\n`);
@@ -835,7 +841,7 @@ async function handleMessage(msg) {
     sendJson({ jsonrpc: '2.0', id, result: {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'framex-feishu', version: '2.0.7' },
+      serverInfo: { name: 'framex-feishu', version: '2.0.8' },
     }});
     return;
   }
